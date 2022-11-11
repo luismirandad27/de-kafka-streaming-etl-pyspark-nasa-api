@@ -4,6 +4,11 @@ from pyspark.sql.window import Window
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Reading BigQuery Tables
+
+# COMMAND ----------
+
 #loading the datasets
 table_post_questions = 'bigquery-public-data.stackoverflow.posts_questions'
 table_post_answers = 'bigquery-public-data.stackoverflow.posts_answers'
@@ -12,127 +17,79 @@ table_badges = 'bigquery-public-data.stackoverflow.badges'
 
 # COMMAND ----------
 
-column_post_questions = [col('id').alias('post_id'),'title','accepted_answer_id','answer_count','comment_count',
+column_post_questions = [col('id').alias('post_id'),'accepted_answer_id','answer_count','comment_count',
                           'creation_date','owner_user_id','score','tags','view_count']
 
-column_post_a = [col('id').alias('answer_id'),col('creation_date').alias('answer_date'),col('owner_user_id').alias('user_id_answer'),
+column_post_answers = [col('id').alias('answer_id'),col('creation_date').alias('answer_creation_date'),col('owner_user_id').alias('user_id_answer'),
                  col('score').alias('answer_score')]
 
-column_users = [col('id').alias('user_id'),'display_name','reputation']
+column_users = [col('id').alias('user_id'),'reputation',col('creation_date').alias('user_creation_date')]
 
-column_badges = [col('id').alias('badge_id'),'name','date','user_id','class','tag_based']
+column_badges = [col('id').alias('badge_id'),col('name').alias('badge_name'),col('date').alias('badge_creation_date'),'user_id','class','tag_based']
 
 # COMMAND ----------
 
 #storing data into dataframes
 df_post_questions = spark.read.format('bigquery').option('table',table_post_questions).load().select(column_post_questions)
-df_post_answers = spark.read.format('bigquery').option('table',table_post_answers).load().select(column_post_a)
+df_post_answers = spark.read.format('bigquery').option('table',table_post_answers).load().select(column_post_answers)
 df_users = spark.read.format('bigquery').option('table',table_users).load().select(column_users)
 df_badges = spark.read.format('bigquery').option('table',table_badges).load().select(column_badges)
 
 # COMMAND ----------
 
-#Post Questions Metadata
-df_post_questions.printSchema()
+# MAGIC %md
+# MAGIC ### Data Cleaning and Transformations
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ##### Considerations:
+# MAGIC - Answer dataset: not consider user_id null and answer_date null
+# MAGIC - Badges dataset: not consider (date_badge - date_user_created) < 0
+
+# COMMAND ----------
+
+#Filtering only from 2020 to now
 df_post_questions = df_post_questions.filter(year('creation_date')>=2020)
-
-# COMMAND ----------
-
-df_post_answers = df_post_answers.where((~col('user_id_answer').isNull()) & (year('creation_date')>=2020))
-
-df_post_answers.printSchema()
-
-display(df_post_answers)
-
-# COMMAND ----------
-
-#Users metadata
-df_users.printSchema()
-
-display(df_users)
-
-# COMMAND ----------
-
-#Badge metadata
-df_badges.printSchema()
-
-display(df_badges.filter("""tag_based = false""").groupBy('class').agg(count('*')))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### After reviewing the tables, let´s see what types of columns would be interesting
-# MAGIC For Posts Questions:
-# MAGIC | Column Name | Description |
-# MAGIC |-------------|-------------|
-# MAGIC |id|             |
-# MAGIC |title|             |
-# MAGIC |accepted_answer_id|to get the accepted answer detail|
-# MAGIC |comment_count|maybe to see the difficulty|
-# MAGIC |creation_date|             |
-# MAGIC |favorite_count|to see how many people found insightful or a common issue for many developers|
-# MAGIC |owner_user_id|             |
-# MAGIC |score|             |
-# MAGIC |tags|             |
-# MAGIC |view_count|             |
-# MAGIC 
-# MAGIC For Post Answers:
-# MAGIC | Column Name | Description |
-# MAGIC |-------------|-------------|
-# MAGIC |id|             |
-# MAGIC |creation_date|             |
-# MAGIC |owner_user_id||
-# MAGIC |score||
-# MAGIC 
-# MAGIC For Users:
-# MAGIC | Column Name | Description |
-# MAGIC |-------------|-------------|
-# MAGIC |id|             |
-# MAGIC |display_name|             |
-# MAGIC |reputation||
-# MAGIC |up_votes||
-# MAGIC |down_votes||
-# MAGIC |views||
-# MAGIC 
-# MAGIC For Badges:
-# MAGIC | Column Name | Description |
-# MAGIC |-------------|-------------|
-# MAGIC |id|             |
-# MAGIC |name|             |
-# MAGIC |date||
-# MAGIC |user_id||
-# MAGIC |class||
-# MAGIC |tag_based||
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### 1- Table Post Question Level
+df_post_answers = df_post_answers.where((~col('user_id_answer').isNull()) & (year('answer_creation_date')>=2020) & (~col('answer_creation_date').isNull()))
+df_badges = df_badges.filter(col('tag_based') == False)
 
 # COMMAND ----------
 
 #Joining Questions and Answers
-
-
-df_users = df_users.withColumnRenamed('user_id','user_id_answer')
-
-df_users.printSchema()
+df_users_answers = df_users.withColumnRenamed('user_id','user_id_answer')
 
 df_post_questions_answers = df_post_questions\
                                 .join(df_post_answers,df_post_questions.accepted_answer_id == df_post_answers.answer_id,how='left')\
-                                .join(df_users,df_post_answers.user_id_answer == df_users.user_id_answer, how='left' )
-                            
+                                .join(df_users_answers,df_post_answers.user_id_answer == df_users_answers.user_id_answer, how='left' )
 
 # COMMAND ----------
 
-df_post_questions_answers.printSchema()
+#Joining Users and Badges
+class_name = when(col('class') == 1,lit('gold'))\
+             .when(col('class') == 2, lit('silver')).otherwise(lit('bronze'))
+
+df_users_badges = df_users\
+                    .join(df_badges,on=['user_id'],how='inner')\
+                    .withColumn('class',class_name)\
+                    .withColumn('days_after_creation',datediff(col('badge_creation_date'),col('user_creation_date')))
 
 # COMMAND ----------
 
-display(df_post_answers.agg(max('answer_score')))
-display(df_post_answers.filter("""answer_score = 34269"""))
-display(df_post_questions.filter("""accepted_answer_id = 11227902"""))
+df_post_questions_answers_f = df_post_questions_answers.select(
+                                                concat(year(col('creation_date')),lit('-'),month(col('creation_date'))).alias('year_month'),
+                                                year(col('creation_date')).alias('year'),
+                                                month(col('creation_date')).alias('month'),
+                                                '*'
+                                                )
+
+display(df_post_questions_answers_f)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Final Tables to Export
 
 # COMMAND ----------
 
@@ -149,9 +106,9 @@ sum_total_5m_tag = sum(when(size(split(col('tags'),"\|")) >= 5,lit(1)).otherwise
 sum_quest_accepted_answer = sum(when(~col('accepted_answer_id').isNull(),lit(1)).otherwise(lit(0)))
 
 #For delay of accepted answer
-avg_days_accepted_answer = avg(datediff(col('answer_date'),col('creation_date')))
-max_days_accepted_answer = max(datediff(col('answer_date'),col('creation_date')))
-min_days_accepted_answer = min(datediff(col('answer_date'),col('creation_date')))
+avg_days_accepted_answer = avg(datediff(col('answer_creation_date'),col('creation_date')))
+max_days_accepted_answer = max(datediff(col('answer_creation_date'),col('creation_date')))
+min_days_accepted_answer = min(datediff(col('answer_creation_date'),col('creation_date')))
 
 #For answers average score and reputation
 avg_answer_score = avg(col('answer_score'))
@@ -167,12 +124,12 @@ percentile_100_score = expr('percentile(answer_score, array(1))')[0]
 
 # COMMAND ----------
 
-df_post_questions_grouped = df_post_questions_answers\
-            .select('*',
-                    explode(split(col('tags'),"\|")).alias('tag_name'),
-                    year(col('creation_date')).alias('year'),
-                    month(col('creation_date')).alias('month'),
-                   )\
+# MAGIC %md
+# MAGIC #### 1- Table Post Question Level
+
+# COMMAND ----------
+
+df_post_questions_grouped = df_post_questions_answers_f\
             .groupBy('year','month')\
             .agg(count('*').alias('qty_questions'),
                  sum_quest_accepted_answer.alias('sum_questions_w_acceptedanswer'),
@@ -191,25 +148,24 @@ df_post_questions_grouped = df_post_questions_answers\
                  sum_total_4_tag.alias('sum_total_4_tag'),
                  sum_total_5m_tag.alias('sum_total_5m_tag'),
                  avg_answer_score.alias('avg_answer_score'),
-                 avg_answer_user_reputation.alias('avg_answer_user_reputation'),
-                 percentile_25_score.alias('percentile_25_answer_score'),
-                 percentile_50_score.alias('percentile_50_answer_score'),
-                 percentile_75_score.alias('percentile_75_answer_score'),
-                 percentile_100_score.alias('percentile_100_answer_score')
+                 avg_answer_user_reputation.alias('avg_answer_user_reputation')
                 )\
-            .orderBy(col('year').desc(),col('month').desc())\
-            .withColumn('year_month',concat(col('year'),lit('-'),col('month')))
+            .orderBy(col('year').desc(),col('month').desc())
 
 display(df_post_questions_grouped)
 
 
 # COMMAND ----------
 
-df_post_questions_grouped_tag = df_post_questions_answers\
-    .select('*',explode(split(col('tags'),"\|")).alias('tag_name'),
-            year(col('creation_date')).alias('year'),
-            month(col('creation_date')).alias('month')
-           )\
+# MAGIC %md
+# MAGIC #### 2- Table Post Question Tag Level
+
+# COMMAND ----------
+
+tag_name = explode(split(col('tags'),"\|"))
+
+df_post_questions_grouped_tag = df_post_questions_answers_f\
+    .select('*',tag_name.alias('tag_name'))\
     .groupBy('year','month','tag_name')\
     .agg(
         count('*').alias('qty_questions'),
@@ -226,20 +182,87 @@ df_post_questions_grouped_tag = df_post_questions_answers\
          avg_answer_score.alias('avg_answer_score'),
          avg_answer_user_reputation.alias('avg_answer_user_reputation')
     )\
-    .orderBy(col('year').desc(),col('month').desc(),col('qty_questions').desc())\
-    .withColumn('year_month',concat(col('year'),lit('-'),col('month')))
+    .orderBy(col('year').desc(),col('month').desc(),col('qty_questions').desc())
 
 display(df_post_questions_grouped_tag)
 
 # COMMAND ----------
 
-display(df_post_questions_grouped_tag.filter("""tag_name = 'python'""").orderBy(col('tag_name'),col('year').desc(),col('month').desc()))
+# MAGIC %md
+# MAGIC #### 3- Table Level Day of the Week
 
 # COMMAND ----------
 
+display(df_post_answers\
+            .select('*',
+                    year(col('answer_creation_date')).alias('year'),
+                    month(col('answer_creation_date')).alias('month'),
+                    dayofweek(col('answer_creation_date')).alias('day_number'),
+                    date_format(col("answer_creation_date"), "EEEE").alias('answer_day')
+                   )\
+            .groupBy('year','month','day_number','answer_day')\
+            .agg(count('*').alias('qty_answers'))\
+            .orderBy(col('day_number').asc(),col('year').desc(),col('month').desc())
+       )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC #### 4- Badges Velocity to Earned
+
+# COMMAND ----------
+
+#class 3 -> bronze
+#class 2 -> silver
+#class 1 -> gold
+percentile_25_days = expr('percentile(days_after_creation, array(0.25))')[0]
+percentile_50_days = expr('percentile(days_after_creation, array(0.50))')[0]
+percentile_75_days = expr('percentile(days_after_creation, array(0.75))')[0]
+percentile_100_days = expr('percentile(days_after_creation, array(1))')[0]
+
+display(
+    df_users_badges\
+        .select('*')\
+        .where(col('days_after_creation') >= 0)\
+        .groupBy('badge_name','class')\
+        .agg(count('*').alias('qty_users'),
+             avg('days_after_creation').alias('avg_days_after_creation'),
+             min('days_after_creation').alias('min_days_after_creation'),
+             max('days_after_creation').alias('max_days_after_creation'),
+             percentile_25_days,
+             percentile_50_days,
+             percentile_75_days,
+             percentile_100_days
+            )\
+        .orderBy(col('avg_days_after_creation').asc())
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### 5- Just in case, Ranking of tags per year and month
+
+# COMMAND ----------
 
 display(df_post_questions_grouped_tag\
        .select('*',dense_rank().over(Window.partitionBy('year','month').orderBy(desc('qty_questions'))).alias('rank'))\
        .filter("""rank <= 15""")\
         .orderBy(col('year').desc(),col('month').desc(),'rank')
        )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Writing Tables on BigQuery Bucket
+
+# COMMAND ----------
+
+bucket = 'gcs-dataengineer-projects'
+table_post_questions_agg = 'lm-dataengineeringproject.de_dataset_stackoverflow.dm_post_questions_agg'
+
+df_post_questions_grouped.write\
+  .format("bigquery")\
+  .option("temporaryGcsBucket", bucket)\
+  .option("table", table_post_questions_agg)\
+  .mode("overwrite").save()
