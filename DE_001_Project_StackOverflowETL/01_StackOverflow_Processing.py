@@ -78,7 +78,7 @@ df_users_badges = df_users\
 # COMMAND ----------
 
 df_post_questions_answers_f = df_post_questions_answers.select(
-                                                concat(year(col('creation_date')),lit('-'),month(col('creation_date'))).alias('year_month'),
+                                                (year(col('creation_date'))*100 + month(col('creation_date'))).alias('year_month'),
                                                 year(col('creation_date')).alias('year'),
                                                 month(col('creation_date')).alias('month'),
                                                 '*'
@@ -103,7 +103,8 @@ sum_total_4_tag = sum(when(size(split(col('tags'),"\|")) == 4,lit(1)).otherwise(
 sum_total_5m_tag = sum(when(size(split(col('tags'),"\|")) >= 5,lit(1)).otherwise(lit(0)))
 
 #For questions with accepted answers
-sum_quest_accepted_answer = sum(when(~col('accepted_answer_id').isNull(),lit(1)).otherwise(lit(0)))
+count_quest_accepted_answer = sum(when(~col('accepted_answer_id').isNull(),lit(1)).otherwise(lit(0)))
+count_quest_no_accepted_answer = sum(when(col('accepted_answer_id').isNull(),lit(1)).otherwise(lit(0)))
 
 #For delay of accepted answer
 avg_days_accepted_answer = avg(datediff(col('answer_creation_date'),col('creation_date')))
@@ -130,9 +131,10 @@ percentile_100_score = expr('percentile(answer_score, array(1))')[0]
 # COMMAND ----------
 
 df_post_questions_grouped = df_post_questions_answers_f\
-            .groupBy('year','month')\
+            .groupBy('year_month','year','month')\
             .agg(count('*').alias('qty_questions'),
-                 sum_quest_accepted_answer.alias('sum_questions_w_acceptedanswer'),
+                 count_quest_accepted_answer.alias('qty_questions_w_acceptedanswer'),
+                 count_quest_no_accepted_answer.alias('qty_questions_n_acceptedanswer'),
                  avg_days_accepted_answer.alias('avg_days_accepted_answer'),
                  max_days_accepted_answer.alias('max_days_accepted_answer'),
                  min_days_accepted_answer.alias('min_days_accepted_answer'),
@@ -166,10 +168,11 @@ tag_name = explode(split(col('tags'),"\|"))
 
 df_post_questions_grouped_tag = df_post_questions_answers_f\
     .select('*',tag_name.alias('tag_name'))\
-    .groupBy('year','month','tag_name')\
+    .groupBy('year_month','year','month','tag_name')\
     .agg(
         count('*').alias('qty_questions'),
-         sum_quest_accepted_answer.alias('sum_questions_w_acceptedanswer'),
+         count_quest_accepted_answer.alias('qty_questions_w_acceptedanswer'),
+         count_quest_no_accepted_answer.alias('qty_questions_n_acceptedanswer'),
          avg_days_accepted_answer.alias('avg_days_accepted_answer'),
          max_days_accepted_answer.alias('max_days_accepted_answer'),
          min_days_accepted_answer.alias('min_days_accepted_answer'),
@@ -184,6 +187,10 @@ df_post_questions_grouped_tag = df_post_questions_answers_f\
     )\
     .orderBy(col('year').desc(),col('month').desc(),col('qty_questions').desc())
 
+df_post_questions_grouped_tag = df_post_questions_grouped_tag\
+                                .withColumn('rank',dense_rank().over(Window.partitionBy('year','month').orderBy(desc('qty_questions'))))\
+                                .where(col('rank')<=10)
+
 display(df_post_questions_grouped_tag)
 
 # COMMAND ----------
@@ -193,17 +200,18 @@ display(df_post_questions_grouped_tag)
 
 # COMMAND ----------
 
-display(df_post_answers\
-            .select('*',
+df_post_answers_weekday = df_post_answers\
+            .select((year(col('answer_creation_date'))*100 + month(col('answer_creation_date'))).alias('year_month'),
                     year(col('answer_creation_date')).alias('year'),
                     month(col('answer_creation_date')).alias('month'),
                     dayofweek(col('answer_creation_date')).alias('day_number'),
                     date_format(col("answer_creation_date"), "EEEE").alias('answer_day')
                    )\
-            .groupBy('year','month','day_number','answer_day')\
+            .groupBy('year_month','year','month','day_number','answer_day')\
             .agg(count('*').alias('qty_answers'))\
             .orderBy(col('day_number').asc(),col('year').desc(),col('month').desc())
-       )
+
+display(df_post_answers_weekday)
 
 # COMMAND ----------
 
@@ -221,8 +229,7 @@ percentile_50_days = expr('percentile(days_after_creation, array(0.50))')[0]
 percentile_75_days = expr('percentile(days_after_creation, array(0.75))')[0]
 percentile_100_days = expr('percentile(days_after_creation, array(1))')[0]
 
-display(
-    df_users_badges\
+df_users_badges_f = df_users_badges\
         .select('*')\
         .where(col('days_after_creation') >= 0)\
         .groupBy('badge_name','class')\
@@ -230,26 +237,14 @@ display(
              avg('days_after_creation').alias('avg_days_after_creation'),
              min('days_after_creation').alias('min_days_after_creation'),
              max('days_after_creation').alias('max_days_after_creation'),
-             percentile_25_days,
-             percentile_50_days,
-             percentile_75_days,
-             percentile_100_days
+             percentile_25_days.alias('percentile_25_days'),
+             percentile_50_days.alias('percentile_50_days'),
+             percentile_75_days.alias('percentile_75_days'),
+             percentile_100_days.alias('percentile_100_days')
             )\
         .orderBy(col('avg_days_after_creation').asc())
-)
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### 5- Just in case, Ranking of tags per year and month
-
-# COMMAND ----------
-
-display(df_post_questions_grouped_tag\
-       .select('*',dense_rank().over(Window.partitionBy('year','month').orderBy(desc('qty_questions'))).alias('rank'))\
-       .filter("""rank <= 15""")\
-        .orderBy(col('year').desc(),col('month').desc(),'rank')
-       )
+display(df_users_badges_f)
 
 # COMMAND ----------
 
@@ -259,10 +254,32 @@ display(df_post_questions_grouped_tag\
 # COMMAND ----------
 
 bucket = 'gcs-dataengineer-projects'
+
 table_post_questions_agg = 'lm-dataengineeringproject.de_dataset_stackoverflow.dm_post_questions_agg'
+table_post_questions_grouped_tag_agg = 'lm-dataengineeringproject.de_dataset_stackoverflow.dm_post_questions_tag_agg'
+table_post_answers_weekday_agg = 'lm-dataengineeringproject.de_dataset_stackoverflow.dm_post_answers_weekday_agg'
+table_users_badges_f_agg = 'lm-dataengineeringproject.de_dataset_stackoverflow.dm_users_badges_agg'
 
 df_post_questions_grouped.write\
   .format("bigquery")\
   .option("temporaryGcsBucket", bucket)\
   .option("table", table_post_questions_agg)\
+  .mode("overwrite").save()
+
+df_post_questions_grouped_tag.write\
+  .format("bigquery")\
+  .option("temporaryGcsBucket", bucket)\
+  .option("table", table_post_questions_grouped_tag_agg)\
+  .mode("overwrite").save()
+
+df_post_answers_weekday.write\
+  .format("bigquery")\
+  .option("temporaryGcsBucket", bucket)\
+  .option("table", table_post_answers_weekday_agg)\
+  .mode("overwrite").save()
+
+df_users_badges_f.write\
+  .format("bigquery")\
+  .option("temporaryGcsBucket", bucket)\
+  .option("table", table_users_badges_f_agg)\
   .mode("overwrite").save()
