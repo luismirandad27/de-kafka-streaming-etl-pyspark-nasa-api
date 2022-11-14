@@ -1,4 +1,18 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Stack Overflow's Analysis
+# MAGIC 
+# MAGIC *By: Luis Miguel Miranda*
+# MAGIC 
+# MAGIC Hi everyone! In this Notebook, you will find a process of reading some tables of the Stack Overflow's dataset, which is available as a public dataset on GCP Marketplace (link: https://console.cloud.google.com/marketplace/product/stack-exchange/stack-overflow?project=lm-dataengineeringproject)
+# MAGIC 
+# MAGIC If you have any questions or you found some interesting things to analyze on this dataset, please let me know:
+# MAGIC - LinkedIn: https://www.linkedin.com/in/lmirandad27/?locale=en_US
+# MAGIC - GitHub: https://github.com/luismirandad27
+# MAGIC - Personal Website: https://luismiguelmiranda.com
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.window import Window
 
@@ -9,7 +23,7 @@ from pyspark.sql.window import Window
 
 # COMMAND ----------
 
-#loading the datasets
+# Storing table names
 table_post_questions = 'bigquery-public-data.stackoverflow.posts_questions'
 table_post_answers = 'bigquery-public-data.stackoverflow.posts_answers'
 table_users = 'bigquery-public-data.stackoverflow.users'
@@ -17,6 +31,7 @@ table_badges = 'bigquery-public-data.stackoverflow.badges'
 
 # COMMAND ----------
 
+# Selecting columns for each dataset
 column_post_questions = [col('id').alias('post_id'),'accepted_answer_id','answer_count','comment_count',
                           'creation_date','owner_user_id','score','tags','view_count']
 
@@ -29,7 +44,7 @@ column_badges = [col('id').alias('badge_id'),col('name').alias('badge_name'),col
 
 # COMMAND ----------
 
-#storing data into dataframes
+# Storing data into dataframes
 df_post_questions = spark.read.format('bigquery').option('table',table_post_questions).load().select(column_post_questions)
 df_post_answers = spark.read.format('bigquery').option('table',table_post_answers).load().select(column_post_answers)
 df_users = spark.read.format('bigquery').option('table',table_users).load().select(column_users)
@@ -50,9 +65,9 @@ df_badges = spark.read.format('bigquery').option('table',table_badges).load().se
 
 # COMMAND ----------
 
-#Filtering only from 2020 to now
-df_post_questions = df_post_questions.filter(year('creation_date')>=2020)
-df_post_answers = df_post_answers.where((~col('user_id_answer').isNull()) & (year('answer_creation_date')>=2020) & (~col('answer_creation_date').isNull()))
+#Filtering only from 2018 to now
+df_post_questions = df_post_questions.filter(year('creation_date')>=2018)
+df_post_answers = df_post_answers.where((~col('user_id_answer').isNull()) & (year('answer_creation_date')>=2018) & (~col('answer_creation_date').isNull()))
 df_badges = df_badges.filter(col('tag_based') == False)
 
 # COMMAND ----------
@@ -77,6 +92,7 @@ df_users_badges = df_users\
 
 # COMMAND ----------
 
+# For Q&A dataframe, I'm adding some aditional columns
 df_post_questions_answers_f = df_post_questions_answers.select(
                                                 (year(col('creation_date'))*100 + month(col('creation_date'))).alias('year_month'),
                                                 year(col('creation_date')).alias('year'),
@@ -89,7 +105,7 @@ display(df_post_questions_answers_f)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Final Tables to Export
+# MAGIC ### Making Aggregations
 
 # COMMAND ----------
 
@@ -217,7 +233,7 @@ display(df_post_answers_weekday)
 
 # MAGIC %md
 # MAGIC 
-# MAGIC #### 4- Badges Velocity to Earned
+# MAGIC #### 4- Badges
 
 # COMMAND ----------
 
@@ -283,3 +299,8 @@ df_users_badges_f.write\
   .option("temporaryGcsBucket", bucket)\
   .option("table", table_users_badges_f_agg)\
   .mode("overwrite").save()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC *Version: v.1.0 (14/11/2022)*
