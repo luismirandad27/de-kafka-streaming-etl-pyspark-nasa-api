@@ -28,7 +28,7 @@ print(data)
 # COMMAND ----------
 
 #Creating a new Kafka server
-producer = KafkaProducer(bootstrap_servers="localhost:9092",api_version=(0,11,5))
+producer = KafkaProducer(bootstrap_servers="localhost:9092")
 
 #Encoding the record and send it to the topic
 producer.send("users_info", data.encode())

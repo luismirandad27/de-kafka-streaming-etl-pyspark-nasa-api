@@ -1,11 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-
-# COMMAND ----------
-
-# MAGIC %sh
-# MAGIC pip install --upgrade pip
-# MAGIC pip install kafka-python
+# MAGIC # Creating a Kafka Consumer with Python
 
 # COMMAND ----------
 
@@ -19,14 +14,10 @@ import pyspark.sql.functions as f
 
 dfStream = spark.readStream.format("kafka").\
 option("kafka.bootstrap.servers", "localhost:9092").\
-option("subscribe", "users_info").\
+option("subscribe", "usersinfotopic").\
 option("startingOffsets", "latest").\
 load()
 
 # COMMAND ----------
 
 display(dfStream)
-
-# COMMAND ----------
-
-
