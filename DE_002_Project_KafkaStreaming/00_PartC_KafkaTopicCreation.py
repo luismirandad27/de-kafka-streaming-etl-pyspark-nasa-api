@@ -7,4 +7,4 @@
 # COMMAND ----------
 
 # MAGIC %sh
-# MAGIC ./kafka_2.12-3.2.3/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic usersinfotopic --partitions 1 --replication-factor 1
+# MAGIC ./kafka_2.12-3.2.3/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic neowstopic --partitions 1 --replication-factor 1
