@@ -13,6 +13,17 @@ import pyspark.sql.functions as f
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ##### Setting Spark Configurations with Amazon S3 Bucket
+
+# COMMAND ----------
+
+spark.conf.set("fs.s3a.access.key", "AKIA5F5MH5XOEN3CI7U5")
+spark.conf.set("fs.s3a.secret.key", "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")
+spark.conf.set("fs.s3a.endpoint", "s3.amazonaws.com")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ##### Data Structure
 
 # COMMAND ----------
@@ -63,7 +74,8 @@ data_structure = StructType([
                                                                                         ]))
                                                 ])
                                             )),
-        StructField("is_sentry_object", BooleanType(), True)
+        StructField("is_sentry_object", BooleanType(), True),
+        StructField("current_date",StringType(), True)
     ])
 
 # COMMAND ----------
@@ -74,13 +86,20 @@ data_structure = StructType([
 # COMMAND ----------
 
 final_columns = [
+                f.col("F.json_data.current_date").alias("date"),
                 f.col("F.json_data.id").cast("int").alias("object_id"),
                 f.col("F.json_data.neo_reference_id").cast("int").alias("object_neo_reference_id"),
                 f.col("F.json_data.name").alias("object_name"),
                 f.col("F.json_data.absolute_magnitude_h").alias("absolute_magnitude_h"),
-                f.col("F.json_data.estimated_diameter").alias("estimated_diameter"),
+                f.col("F.json_data.estimated_diameter.kilometers.estimated_diameter_min").alias("estimated_diameter_min_km"),
+                f.col("F.json_data.estimated_diameter.kilometers.estimated_diameter_max").alias("estimated_diameter_max_km"),
                 f.col("F.json_data.is_potentially_hazardous_asteroid").alias("is_potentially_hazardous_asteroid"),
-                f.col("F.json_data.close_approach_data").alias("close_approach_data"),
+                f.col("F.json_data.close_approach_data.close_approach_date_full")[0].alias("close_approach_date_full"),
+                f.col("F.json_data.close_approach_data.relative_velocity.kilometers_per_second")[0].cast('double').alias("relative_velocity_km_per_sec"),
+                f.col("F.json_data.close_approach_data.relative_velocity.kilometers_per_hour")[0].cast('double').alias("relative_velocity_km_per_hour"),
+                f.col("F.json_data.close_approach_data.miss_distance.astronomical")[0].cast('double').alias("miss_distance_astronomical"),
+                f.col("F.json_data.close_approach_data.miss_distance.lunar")[0].cast('double').alias("miss_distance_lunar"),
+                f.col("F.json_data.close_approach_data.miss_distance.kilometers")[0].cast('double').alias("miss_distance_kilometers"),
                 f.col("F.json_data.is_sentry_object").alias("is_sentry_object")
 ]
 
@@ -107,21 +126,17 @@ display(dfStream)
 
 # COMMAND ----------
 
-# MAGIC %fs
-# MAGIC rm -r dbfs:///FileStore/output/dfRealTimeNeoWs
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC ##### Writing from Stream
+# MAGIC ##### Writing from Stream to AWS S3 Bucket
 
 # COMMAND ----------
 
 dfStream.\
     writeStream.\
     format("parquet").\
+    partitionBy("date").\
     outputMode("append").\
-    option("checkpointLocation", "dbfs:///FileStore/output/dfRealTimeNeoWs/_checkpoints/dfRealTimeNeoWs").\
+    option("checkpointLocation", "s3://kafkaneowsbucket/kafka_rt_neows/_checkpoints/kafka_rt_neows").\
     trigger(processingTime = "5 seconds").\
-    start("dbfs:///FileStore/output/dfRealTimeNeoWs").\
+    start("s3://kafkaneowsbucket/kafka_rt_neows/").\
     awaitTermination()

@@ -75,6 +75,8 @@ def send_near_objects(objects_json, start_date_str, end_date_str, producer):
         
         for asteroid in asteroids:
             
+            asteroid['current_date'] = current_date_str
+            
             print(f"Sending element {index} to Kafka")
             
             data_asteroid = json.dumps(asteroid)
@@ -103,8 +105,8 @@ def init(start_date_str, end_date_str):
 
 # COMMAND ----------
 
-start_date_str = "2022-11-18"
-end_date_str = "2022-11-18"
+start_date_str = "2022-11-19"
+end_date_str = "2022-11-20"
 
 #Calling main method
 init(start_date_str, end_date_str)
