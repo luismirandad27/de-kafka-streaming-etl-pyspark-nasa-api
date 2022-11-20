@@ -9,6 +9,7 @@ from pyspark.sql.types import StructType, StructField
 from pyspark.sql.types import StringType, IntegerType, DoubleType, BooleanType, LongType
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+import os
 
 # COMMAND ----------
 
@@ -17,8 +18,8 @@ import pyspark.sql.functions as f
 
 # COMMAND ----------
 
-spark.conf.set("fs.s3a.access.key", "AKIA5F5MH5XOEN3CI7U5")
-spark.conf.set("fs.s3a.secret.key", "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")
+spark.conf.set("fs.s3a.access.key", str(os.environ['AWS_ACCESS_KEY']))
+spark.conf.set("fs.s3a.secret.key", str(os.environ['AWS_SECRET_ACCESS_KEY']))
 spark.conf.set("fs.s3a.endpoint", "s3.amazonaws.com")
 
 # COMMAND ----------
@@ -114,6 +115,7 @@ dfStream = spark.readStream.format("kafka")\
                             .option("kafka.bootstrap.servers","localhost:9092")\
                             .option("subscribe","neowstopic")\
                             .option("startingOffsets","latest")\
+                            .option("failOnDataLoss","false")\
                             .load().alias("S")\
                             .select(f.col("S.value").cast("string")).alias("J")\
                             .withColumn("json_data",f.from_json(f.col("J.value"),data_structure))\
