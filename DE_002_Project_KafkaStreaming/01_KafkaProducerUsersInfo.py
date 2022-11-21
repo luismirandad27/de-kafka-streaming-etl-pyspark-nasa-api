@@ -105,8 +105,8 @@ def init(start_date_str, end_date_str):
 
 # COMMAND ----------
 
-start_date_str = "2022-11-11"
-end_date_str = "2022-11-17"
+start_date_str = "2022-11-18"
+end_date_str = "2022-11-19"
 
 #Calling main method
 init(start_date_str, end_date_str)
