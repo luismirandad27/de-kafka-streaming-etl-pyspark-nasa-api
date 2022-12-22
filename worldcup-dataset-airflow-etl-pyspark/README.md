@@ -1,46 +1,105 @@
-Overview
-========
+# Apache Airflow Project using Spark (`SparkSubmitOperator`)
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+Hi everyone! I created this project to simulate an ETL process using Apache Airflow that can integrate Spark processing and receiving/sending data to AWS S3 buckets.
 
-Project Contents
-================
+## **1. Project description**:
+In my AWS S3 bucket, I have 3 datasets related to FIFA World Cup history (until Brazil 2014 World Cup). The idea is extract these datasets using spark, transforming the data and loading into new datasets that are going to be the inputs for a dashboard developed with AWS Quicksight.
 
-Your Astro project contains the following files and folders:
+You can find the datasets that I stored in my S3 bucket on the /project-datasets folder
 
-- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes an example DAG that runs every 30 minutes and simply prints the current date. It also includes an empty 'my_custom_function' that you can fill out to execute Python code.
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
+## **2. Configuring Airflow Workers to run Spark tasks**:
 
-Deploy Your Project Locally
-===========================
+In this case, I'm using Astronomer to create my Airflow project, to complete my project, I needed to set up a new *provider*: the `apache-airflow-providers-apache-spark` provider.
 
-1. Start Airflow on your local machine by running 'astro dev start'.
+First, we need to create our astro project:
 
-This command will spin up 3 Docker containers on your machine, each for a different Airflow component:
+```bash
+astro dev init
+```
 
-- Postgres: Airflow's Metadata Database
-- Webserver: The Airflow component responsible for rendering the Airflow UI
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
+To accomplish this, I needed to do the following steps:
 
-2. Verify that all 3 Docker containers were created by running 'docker ps'.
+### a. <ins>Configuring JAVA_HOME environment variable in the Airflow Executors</ins>:
 
-Note: Running 'astro dev start' will start your project with the Airflow Webserver exposed at port 8080 and Postgres exposed at port 5432. If you already have either of those ports allocated, you can either stop your existing Docker containers or change the port.
+Add the following packages in your *packages.txt* file:
 
-3. Access the Airflow UI for your local Airflow project. To do so, go to http://localhost:8080/ and log in with 'admin' for both your Username and Password.
+```
+libpq-dev
+gcc
+default-jre
+default-jdk
+```
 
-You should also be able to access your Postgres Database at 'localhost:5432/postgres'.
+In your Docker File add the following:
 
-Deploy Your Project to Astronomer
-=================================
+```bash
+ENV JAVA_HOME /usr/lib/jvm/java-1.11.0-openjdk-amd64
+```
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://docs.astronomer.io/cloud/deploy-code/
+The file name will depend on the java version is installed in your Airflow Executors.
 
-Contact
-=======
+### b. <ins>Installing Apache Spark Provider</ins>:
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support team: https://support.astronomer.io/
+Add the following package name into your *Requirements.txt* file:
+
+```bash
+apache-airflow-providers-apache-spark==4.0.0
+```
+
+### c. <ins>Adding your AWS Developer Credentials</ins>:
+
+Add the following lines into your *DockerFile* to add your enviroment variables:
+
+```bash
+ENV AWS_ACCESS_KEY  '[YOUR_AWS_ACCESS_KEY]'
+ENV AWS_SECRET_ACCESS_KEY '[YOUR_AWS_SECRET_ACCESS_KEY]'
+```
+
+### d. <ins>Including AWS Jars for Spark Processing</ins>:
+
+On your /include folder inside your **local** project folder, add the following jar files:
+
+```bash
+hadoop-aws-3.2.2.jar
+aws-java-sdk-1.12.368.jar
+aws-java-sdk-bundle-1.12.368.jar
+```
+
+You can download them in the following links:
+- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-aws/3.2.2
+- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk/1.12.368
+- https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-bundle/1.12.368
+
+After putting this jar on your local folder, using the *DockerFile* we will send them to the Executors folder. Just add the following lines into your *DockerFile*:
+
+```bash
+RUN rm -rf /include/*
+COPY /include/ /include
+```
+
+### d. <ins>Moving your Python files</ins>:
+
+In your **local** project folder, I save my Python foles in the /app folder. The idea is to move this files to the /app folder in our executors. To do that just add the following lines into your *DockerFile*:
+
+```bash
+RUN rm -rf /app/*
+COPY /app/ /app
+```
+
+Finally, because we are storing parquet files in our Executor, I needed to change the permissions.
+
+If you are developing a personal project, you can just put a 777 permissions.
+
+Add these lines into your *DockerFile*:
+
+```bash
+USER root
+RUN chmod -R 777 /app
+```
+
+Finally, start your Airflow service:
+```bash
+astro dev start
+```
+
+Hope this projects helps!
