@@ -1,4 +1,0 @@
-libpq-dev
-gcc
-default-jre
-default-jdk
